@@ -1,0 +1,151 @@
+---
+kind: pipeline
+type: docker
+name: build-docker-image
+
+steps:
+  - name: build-docker-image-branch
+    pull: if-not-exists
+    image: plugins/docker
+    settings:
+      registry: registry.digitalocean.com
+      repo: registry.digitalocean.com/do-nyc-cr01/recipeappapi
+      tags:
+        - ${DRONE_SOURCE_BRANCH/\//-}
+        - ${DRONE_SOURCE_BRANCH/\//-}-${DRONE_COMMIT_SHA:0:8}
+      build_args_from_env:
+        - DRONE_SOURCE_BRANCH
+        - DRONE_COMMIT_SHA
+      username:
+        from_secret: DO_CN_REG_USERNAME
+      password:
+        from_secret: DO_CN_REG_PASSWORD
+    when:
+      event:
+        exclude:
+          - tag
+
+  - name: Fetch full git repo
+    pull: if-not-exists
+    image: docker:git
+    commands:
+      - git fetch --all
+    when:
+      event:
+        - tag
+
+#  - name: check-main-image
+#    pull: if-not-exists
+#    image: ellerbrock/alpine-bash-curl-ssl
+#    commands:
+#      - echo "Running on agent $DRONE_MACHINE"
+#      - URL=https://api.digitalocean.com/v2/registry/do-nyc-cr01/repositories/nodejsweb/tags
+#      - TAG_LIST=$(curl -s -X GET -H "Content-Type:application/json" -H "Authorization:Bearer $DO_TOKEN" $URL)
+#      - echo $TAG_LIST | jq -e --arg JQ_IMAGE_TAG_VAR "$MAIN_TAG" '.tags[]|select(.tag == $JQ_IMAGE_TAG_VAR)' >/dev/null
+#      - RET=$?
+#      - echo "...Check if main image $REPO:$MAIN_TAG exists..."
+#      - if [ "$RET" -ne 0 ]; then echo "Main image not found!"; exit 1; fi
+#      - echo "Image $MAIN_TAG exists"
+#      - exit 0
+#    environment:
+#      REPO: registry.digitalocean.com/do-nyc-cr01/nodejsweb
+#      MAIN_TAG: main-${DRONE_COMMIT_SHA:0:8}
+#      DO_TOKEN:
+#        from_secret: DO_CN_REG_PASSWORD
+#    when:
+#      event:
+#        - tag
+
+  - name: check-main-image
+    pull: if-not-exists
+    image: appleboy/drone-ssh
+    settings:
+      host: 68.183.113.234
+      port: 22
+      user: docker1
+      password:
+        from_secret: DO_NYC_CI02_DOCKER1_PASSWORD
+      command_timeout: 1m
+      script:
+        - /home/docker1/scripts/03_check_image.sh main-${DRONE_COMMIT_SHA:0:8}
+    when:
+      event:
+        - tag
+
+  - name: build-docker-image-tag
+    pull: if-not-exists
+    image: plugins/docker
+    settings:
+      registry: registry.digitalocean.com
+      repo: registry.digitalocean.com/do-nyc-cr01/nodejsweb
+      tags:
+        - ci-${DRONE_TAG/\//-}
+      build_args_from_env:
+        - DRONE_COMMIT_SHA
+        - DRONE_TAG
+      build_args:
+        - DRONE_SOURCE_BRANCH=main
+      cache_from:
+        - registry.digitalocean.com/do-nyc-cr01/nodejsweb:main-${DRONE_COMMIT_SHA:0:8}
+      username:
+        from_secret: DO_CN_REG_USERNAME
+      password:
+        from_secret: DO_CN_REG_PASSWORD
+    when:
+      event:
+        - tag
+
+#depends_on:
+#  - spec-tests-and-linting
+
+
+
+# ---
+# kind: pipeline
+# type: docker
+# name: deploy-branch-to-remote-host
+
+# steps:
+#   - name: create-subdomain-and-run-app
+#     pull: if-not-exists
+#     image: appleboy/drone-ssh
+#     settings:
+#       host: 68.183.113.234
+#       port: 22
+#       user: docker1
+#       password:
+#         from_secret: DO_NYC_CI02_DOCKER1_PASSWORD
+#       command_timeout: 2m
+#       script:
+#         - /home/docker1/scripts/01_create-subdomain.sh ${DRONE_SOURCE_BRANCH/\//-}-${DRONE_COMMIT_SHA:0:8}
+#         - /home/docker1/scripts/02_run-app.sh ${DRONE_SOURCE_BRANCH/\//-}-${DRONE_COMMIT_SHA:0:8}
+#     when:
+#       event:
+#         exclude:
+#           - tag
+
+# depends_on:
+#   - build-docker-image
+
+# trigger:
+#   event:
+#     exclude:
+#       - tag
+
+
+
+#---
+#kind: pipeline
+#type: docker
+#name: deploy-tag
+
+#steps:
+#agganciare immagine all'attuale container di produzione
+#ri-avviare il container con la nuova immagine di produzione
+
+#depends_on:
+#  - build-docker-image-tag
+#
+#trigger:
+#  event:
+#    - tag
