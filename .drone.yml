@@ -88,9 +88,9 @@ steps:
     #  -
     commands:
       - docker-compose -f docker-compose-staging.yml run --rm app sh -c "python manage.py test && flake8"
-    volumes:
-      - name: docker_socket
-        path: /var/run/docker.sock
+    #volumes:
+    #  - name: docker_socket
+    #    path: /var/run/docker.sock
 
   # Only retrieves the metadata from the remote repository,
   # but does NOT transfer anything to your local repository.
@@ -232,9 +232,9 @@ volumes:
 - name: docker
   host:
     path: /var/cache/${DRONE_REPO}/docker
-- name: docker_socket
-  host:
-    path: /var/run/docker.sock
+#- name: docker_socket
+#  host:
+#    path: /var/run/docker.sock
 
 
 ################
