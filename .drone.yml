@@ -4,6 +4,37 @@ type: docker
 name: build-docker-image
 
 steps:
+
+  ###############
+  ##  Caching  ##
+  ###############
+  # "cache" volume empty => create 2 DIRs
+  - name: restore-cache
+    image: drillster/drone-volume-cache
+    settings:
+      restore: true
+      mount:
+        - target
+    volumes:
+      - name: cache
+        path: /cache
+
+  # Restore cache from Docker volume called "cache"
+  - name: prepare-cache
+    image: busybox
+    # DRONE_REPO = full repository name
+    # for the current running build
+    commands:
+      - mkdir -p /cache/${DRONE_REPO}/target
+      - mkdir -p /cache/${DRONE_REPO}/docker
+    volumes:
+      - name: cache
+        path: /cache
+
+  ###################
+  ##  Build image  ##
+  ###################
+  # ...using Docker-in-Docker...
   - name: build-docker-image-branch
     pull: if-not-exists
     image: plugins/docker
@@ -16,15 +47,55 @@ steps:
       build_args_from_env:
         - DRONE_SOURCE_BRANCH
         - DRONE_COMMIT_SHA
+      # Ensures that any existing tags are overwritten/updated
+      force_tag: true
+      use_cache: true
       username:
         from_secret: DO_CN_REG_USERNAME
       password:
         from_secret: DO_CN_REG_PASSWORD
+    # Mount the cache volume in => /var/lib/docker
+    # because that's where Docker will cache layers
+    volumes:
+      - name: cache
+        path: /var/lib/docker
     when:
       event:
         exclude:
           - tag
 
+  # Once the image has been built and pushed
+  # successfully, we need to rebuild/update
+  # the cache to ensure the new layers can be
+  # fetched from it when we reference the image
+  - name: rebuild-cache
+    image: drillster/drone-volume-cache
+    settings:
+      rebuild: true
+      mount:
+        - target
+    volumes:
+      - name: cache
+        path: /cache
+
+  ############
+  ##  Test  ##
+  ############
+  # Test image just built
+  - name: test-and-linting
+    image: docker/compose:1.29.2
+    #environment:
+    #  -
+    commands:
+      - docker-compose -f docker-compose-staging.yml run --rm app sh -c "python manage.py test && flake8"
+    volumes:
+      - name: docker_socket
+        path: /var/run/docker.sock
+
+  # Only retrieves the metadata from the remote repository,
+  # but does NOT transfer anything to your local repository.
+  # It only lets you know if there are any changes
+  # available since your last pull.
   - name: Fetch full git repo
     pull: if-not-exists
     image: docker:git
@@ -98,8 +169,6 @@ steps:
 #depends_on:
 #  - spec-tests-and-linting
 
-
-
 # ---
 # kind: pipeline
 # type: docker
@@ -133,7 +202,6 @@ steps:
 #       - tag
 
 
-
 #---
 #kind: pipeline
 #type: docker
@@ -149,3 +217,41 @@ steps:
 #trigger:
 #  event:
 #    - tag
+
+
+###############
+##  Volumes  ##
+###############
+volumes:
+- name: cache
+  host:
+    path: /var/cache
+- name: target
+  host:
+    path: /var/cache/${DRONE_REPO}/target
+- name: docker
+  host:
+    path: /var/cache/${DRONE_REPO}/docker
+- name: docker_socket
+  host:
+    path: /var/run/docker.sock
+
+
+################
+##  Services  ##
+################
+# Services start automatically:
+# - after the clone step;
+# - before any other step in pipeline.
+# This DB stays running during the whole
+# pipeline and can be accessed using:
+# DB_HOST=postgres-test-db
+services:
+  - name: postgres-test-db
+    image: postgres:13-alpine
+    ports:
+      - 5432
+    environment:
+      - POSTGRES_DB=devdb
+      - POSTGRES_USER=devuser
+      - POSTGRES_PASSWORD=SuperSecretPassword
