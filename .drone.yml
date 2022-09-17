@@ -252,6 +252,6 @@ services:
     ports:
       - 5432
     environment:
-      - POSTGRES_DB: devdb
-      - POSTGRES_USER: devuser
-      - POSTGRES_PASSWORD: SuperSecretPassword
+      POSTGRES_DB: devdb
+      POSTGRES_USER: devuser
+      POSTGRES_PASSWORD: SuperSecretPassword
